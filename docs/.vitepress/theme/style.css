@@ -1,3 +1,7 @@
+.portfolio-home .VPDoc:not(.has-sidebar) > .container > .content {
+  max-width: none;
+}
+
 .project-grid {
   display: grid;
   gap: 16px;

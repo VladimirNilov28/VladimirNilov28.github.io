@@ -2,6 +2,7 @@
 title: Home
 description: Vladimir Nilov, Software Engineer interested in systems programming, backend engineering, Linux, networking, infrastructure, and cybersecurity.
 aside: false
+pageClass: portfolio-home
 ---
 
 # Vladimir Nilov

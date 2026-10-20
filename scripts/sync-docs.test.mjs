@@ -171,7 +171,7 @@ test('VitePress builds rewritten routes, relative links, navigation and unchange
   assert.deepEqual(await readFile(join(output, '_generated/example-project/images/diagram.png')), image)
   assert.equal(await readFile(join(output, '_generated/example-project/files/example.txt'), 'utf8'), 'Example download\n')
   await assert.rejects(readFile(join(output, 'guides/index.html')), { code: 'ENOENT' })
-  assert.ok(page.includes('href="/main/#guides"'))
+  assert.ok(!page.includes('href="/main/#guides"'))
   assert.ok(!page.includes('href="/guides/"'))
   const alias = await readFile(join(output, 'example-project/guide/start.html'), 'utf8')
   assert.ok(alias.includes('http-equiv="refresh" content="0; url=/example-project/"'))

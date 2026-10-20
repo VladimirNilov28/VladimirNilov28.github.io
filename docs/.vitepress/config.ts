@@ -27,8 +27,7 @@ export default defineConfig({
     sidebar: importedDocs.sidebar,
     logoLink: '/main/',
     nav: [
-      { text: 'Home', link: '/main/' },
-      { text: 'Guides', link: '/main/#guides' }
+      { text: 'Home', link: '/main/' }
     ],
     socialLinks: [
       { icon: 'github', link: 'https://github.com/VladimirNilov28' }
