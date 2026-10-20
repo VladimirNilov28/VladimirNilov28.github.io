@@ -30,4 +30,4 @@ This site brings together my projects and technical documentation.
 
 ## Guides
 
-[Browse technical guides](/guides/).
+<!--@include: ../_generated/guide-cards.md-->

@@ -20,9 +20,11 @@ function validateSources(sources) {
   const slugs = new Set()
   for (const source of sources) {
     if (!source || typeof source.title !== 'string' || !source.title.trim() ||
+        typeof source.description !== 'string' || !source.description.trim() ||
         !/^[\w.-]+\/[\w.-]+$/.test(source.repository) ||
         typeof source.branch !== 'string' || !source.branch ||
-        !safePath(source.path) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(source.slug) ||
+        !safePath(source.path) || !safePath(source.entry) || !source.entry.endsWith('.md') ||
+        !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(source.slug) ||
         ['main', 'guides', 'assets', 'public', 'index', '404'].includes(source.slug) ||
         slugs.has(source.slug)) {
       throw new Error(`Invalid or duplicate documentation source: ${JSON.stringify(source)}`)
@@ -32,13 +34,34 @@ function validateSources(sources) {
 }
 
 const encodePath = path => path.split('/').map(encodeURIComponent).join('/')
-const pageUrl = (slug, file) => `/${slug}/${encodePath(file)}`
+const originalPageUrl = (slug, file) => `/${slug}/${encodePath(file)}`
   .replace(/(?:^|\/)index\.md$/, '/').replace(/\.md$/, '')
+const pageUrl = (source, file) => file === source.entry || file === 'index.md'
+  ? `/${source.slug}/`
+  : originalPageUrl(source.slug, file)
+
+function addRewrite(manifest, from, to) {
+  const route = path => path.replace(/(?:\/index)?\.md$/, '').replace(/\/$/, '')
+  if (Object.values(manifest.rewrites).some(path => route(path) === route(to))) {
+    throw new Error(`Conflicting generated documentation route: ${to}`)
+  }
+  manifest.rewrites[from] = to
+}
+
+function redirectMarkdown(to) {
+  const head = [
+    ['meta', { 'http-equiv': 'refresh', content: `0; url=${to}` }],
+    ['meta', { name: 'robots', content: 'noindex' }],
+    ['link', { rel: 'canonical', href: to }],
+    ['script', {}, `location.replace(${JSON.stringify(to)} + location.search + location.hash)`]
+  ]
+  return `---\nlayout: page\ntitle: Redirecting\nsearch: false\nhead: ${JSON.stringify(head)}\n---\n\n[Continue to the documentation](${to}).\n`
+}
 
 function rewriteUrl(url, file, source, files) {
   if (!url || /^(?:[a-z][\w+.-]*:|\/\/|#)/i.test(url)) return url
   const [, pathname, suffix = ''] = url.match(/^([^?#]*)(.*)$/)
-  if (!pathname) return pageUrl(source.slug, file) + suffix
+  if (!pathname) return pageUrl(source, file) + suffix
   let target = decodeURIComponent(pathname)
   if (target.startsWith('/')) {
     target = target.slice(1)
@@ -60,12 +83,13 @@ function rewriteUrl(url, file, source, files) {
   if (target.startsWith('../') || target === '..' || target.includes('\\')) {
     throw new Error(`${source.repository}:${file}: link escapes documentation: ${url}`)
   }
-  const candidates = [target, target.replace(/\.html$/, '.md'), `${target}.md`,
+  const candidates = [!target || /^index\.(?:md|html)$/.test(target) ? source.entry : target,
+    target.replace(/\.html$/, '.md'), `${target}.md`,
     target ? `${target}/index.md` : 'index.md']
   const match = candidates.find(candidate => files.has(candidate))
   if (!match) throw new Error(`${source.repository}:${file}: missing link or image target: ${url}`)
   return (match.endsWith('.md')
-    ? pageUrl(source.slug, match)
+    ? pageUrl(source, match)
     : `/_generated/${source.slug}/${encodePath(match)}`) + suffix
 }
 
@@ -108,8 +132,7 @@ export function rewriteMarkdown(markdown, file, source, files) {
   }).join('\n')
 }
 
-function pageTitle(markdown, file, source) {
-  if (file === 'index.md') return source.title
+function pageTitle(markdown, file) {
   const title = markdown.match(/^title:\s*["']?(.+?)["']?\s*$/m)?.[1] ??
     markdown.match(/^#\s+(.+?)\s*#*\s*$/m)?.[1]
   return title ?? posix.basename(file, '.md').replace(/[-_]/g, ' ')
@@ -122,7 +145,7 @@ export async function syncDocumentation({ directory = root, sources, fetcher = f
   const publicAssets = join(directory, 'docs/public/_generated')
   const clean = () => Promise.all([generated, publicAssets].map(path => rm(path, { recursive: true, force: true })))
   await clean()
-  const manifest = { rewrites: {}, sidebar: {}, projects: [] }
+  const manifest = { rewrites: {}, sidebar: {}, projects: [], redirects: [] }
   try {
     const request = async (url, json = false) => {
       const response = await fetcher(url, {
@@ -147,10 +170,11 @@ export async function syncDocumentation({ directory = root, sources, fetcher = f
         if (!['100644', '100755'].includes(entry.mode)) throw new Error(`Unsupported source file: ${entry.path}`)
         files.set(file, entry)
       }
-      if (!files.has('index.md')) throw new Error(`${source.repository}: ${source.path}/index.md is required`)
+      if (!files.has(source.entry)) throw new Error(`${source.repository}: entry page ${source.path}/${source.entry} is required`)
       const pages = []
       const assets = []
       for (const file of [...files.keys()].sort()) {
+        if (file === 'index.md' && file !== source.entry) continue
         const data = await request(`https://raw.githubusercontent.com/${source.repository}/${commit.sha}/${encodePath(`${source.path}/${file}`)}`)
         const isMarkdown = file.endsWith('.md')
         const destination = join(isMarkdown ? generated : publicAssets, source.slug, file)
@@ -158,13 +182,23 @@ export async function syncDocumentation({ directory = root, sources, fetcher = f
         if (isMarkdown) {
           const markdown = data.toString('utf8')
           await writeFile(destination, rewriteMarkdown(markdown, file, source, files))
-          const link = pageUrl(source.slug, file)
-          pages.push({ text: pageTitle(markdown, file, source), link })
-          manifest.rewrites[`_generated/${source.slug}/${file}`] = `${source.slug}/${file}`
+          const link = pageUrl(source, file)
+          pages.push({ text: pageTitle(markdown, file), link })
+          addRewrite(manifest, `_generated/${source.slug}/${file}`,
+            `${source.slug}/${file === source.entry ? 'index.md' : file}`)
         } else {
           await writeFile(destination, data)
           assets.push(`/_generated/${source.slug}/${encodePath(file)}`)
         }
+      }
+      if (source.entry !== 'index.md') {
+        const from = originalPageUrl(source.slug, source.entry)
+        const to = `/${source.slug}/`
+        const file = `_generated/_redirects/${source.slug}.md`
+        await mkdir(join(generated, '_redirects'), { recursive: true })
+        await writeFile(join(directory, 'docs', file), redirectMarkdown(to))
+        addRewrite(manifest, file, `${source.slug}/${source.entry}`)
+        manifest.redirects.push({ from, to })
       }
       pages.sort((a, b) => Number(b.link === `/${source.slug}/`) - Number(a.link === `/${source.slug}/`) ||
         a.link.localeCompare(b.link))
@@ -173,8 +207,13 @@ export async function syncDocumentation({ directory = root, sources, fetcher = f
       console.log(`Imported ${source.repository}@${commit.sha.slice(0, 7)}: ${pages.length} pages, ${assets.length} assets`)
     }
     const guideLinks = manifest.projects.map(source =>
-      `- [${source.title}](/${source.slug}/) ([source](https://github.com/${source.repository}))`).join('\n')
+      `- [${source.title}](/${source.slug}/): ${source.description} ([source](https://github.com/${source.repository}))`).join('\n')
+    const escape = text => text.replace(/[&<>"']/g, character =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character])
+    const guideCards = manifest.projects.map(source =>
+      `  <a class="project-card guide-card" href="/${source.slug}/">\n    <h3>${escape(source.title)}</h3>\n    <p>${escape(source.description)}</p>\n  </a>`).join('\n')
     await writeFile(join(generated, 'guides.md'), `${guideLinks}\n`)
+    await writeFile(join(generated, 'guide-cards.md'), `<div class="project-grid">\n${guideCards}\n</div>\n`)
     await writeFile(join(generated, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
     return manifest
   } catch (error) {

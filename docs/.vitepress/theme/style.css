@@ -30,6 +30,17 @@
   border-color: var(--vp-c-brand-1);
 }
 
+.vp-doc .guide-card {
+  display: block;
+  color: var(--vp-c-text-1);
+  font-weight: 400;
+  text-decoration: none;
+}
+
+.guide-card:hover {
+  border-color: var(--vp-c-brand-1);
+}
+
 @media (min-width: 640px) {
   .project-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

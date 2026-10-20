@@ -28,10 +28,13 @@ build locally.
 
 ## Site structure
 
-- `/main/`: short introduction, featured project cards, and a link to guides.
+- `/main/`: short introduction, featured projects, and generated cards linking
+  directly to every imported documentation project.
 - `/guides/`: automatically generated list of imported documentation projects.
-- `/tcp-proxy-from-scratch/`: upstream `docs/index.md`, with guides below
-  `/tcp-proxy-from-scratch/guide/`.
+- `/tcp-proxy-from-scratch/`: the upstream Introduction chapter in the standard
+  documentation layout, with guides below `/tcp-proxy-from-scratch/guide/`.
+- `/tcp-proxy-from-scratch/guide/introduction`: compatibility redirect to the
+  canonical project root, preserving query strings and fragments.
 - `/`: static HTML meta-refresh redirect to `/main/`, with a fallback link
   that also works without JavaScript.
 
@@ -44,9 +47,12 @@ project-card layout using the theme's color variables.
 ## Documentation aggregation
 
 `docs.sources.json` lists public source repositories, branches, documentation
-paths (without leading or trailing slashes), titles, and unique URL slugs.
+paths (without leading or trailing slashes), titles, descriptions, entry chapters,
+and unique URL slugs.
 Add another entry to import another project; no submodules or source-repository
-changes are needed. Every source must contain `index.md`.
+changes are needed. Each source must specify an existing Markdown `entry`, such
+as `"entry": "guide/introduction.md"`, and a short plain-text `description` for
+the homepage card. An upstream `index.md` is not required.
 
 ```sh
 npm run docs:sync
@@ -65,8 +71,15 @@ Markdown is stored under `docs/_generated/<slug>/`; binary assets and other
 downloads are copied unchanged to `docs/public/_generated/<slug>/`. Both
 directories are ignored by Git. Do not edit them manually.
 
-VitePress rewrites generated Markdown paths to `/<slug>/...`, preserving
-`index.md` as the project landing page. Local Markdown, reference, HTML, and
+VitePress rewrites the selected entry chapter directly to `/<slug>/index.html`
+and other chapters to `/<slug>/...`. The entry content is imported once; an
+upstream root `index.md` is not imported unless explicitly selected as the entry.
+Imported chapters always use the standard documentation layout and sidebar,
+regardless of upstream layout settings. The entry's original URL becomes a
+static redirect with a canonical link, `noindex`, and `search: false`; it is not
+listed in the sidebar or duplicated in search.
+
+Local Markdown, reference, HTML, and
 frontmatter links are resolved against the original documentation tree and
 rewritten to project-scoped routes; image and download links target the
 generated static assets. Fenced and inline code examples are left unchanged.
@@ -76,11 +89,14 @@ directory are rejected: include the referenced files within that directory.
 Source `.vitepress`, `.github` (including workflows), package manifests and
 lockfiles, `node_modules`, and common build/cache directories are excluded.
 The central configuration and theme remain authoritative. The script also
-generates the guides listing, a sidebar entry for every imported page, and a
-manifest recording imported revisions and routes.
+generates the homepage guide cards and optional guides catalog from the same
+source list, a sidebar entry for every canonical imported page, and a manifest
+recording imported revisions, routes, and compatibility redirects. Links to
+the entry chapter or upstream `index.md` point directly to the project root.
 
 After building, `npm run docs:check` checks generated pages and assets, sidebar
-coverage, and local rendered links, anchors, and images. `npm test` uses local
+coverage, canonical URLs, redirects, duplicate clean paths, and local rendered
+links, anchors, images, scripts, and stylesheets. `npm test` uses local
 fixtures to cover asset preservation, URL rewriting, exclusions, multiple
 projects, stale-file cleanup, and explicit failures without network access.
 
@@ -119,6 +135,38 @@ Required repository settings:
   manual approval.
 
 The published site will be available at `https://VladimirNilov28.github.io/`.
+
+## Avoiding conflicts with standalone project Pages sites
+
+The central user site owns documentation URLs such as
+`https://vladimirnilov28.github.io/tcp-proxy-from-scratch/`. A separate Pages
+deployment in `VladimirNilov28/tcp-proxy-from-scratch` claims that same URL prefix
+and can override central HTML on direct requests. VitePress client navigation
+can still load the central site's JavaScript page chunks, so refresh/back/forward
+may appear inconsistent even when the central build and CSS are correct.
+
+Investigation found the central site configured with `build_type: workflow`,
+but the source repository still configured with `build_type: legacy`, publishing
+`main` from `/`. Its README contains the reported "Documentation publishing"
+section. Direct requests to the project root and chapter URLs returned GitHub's
+"Site not found" HTML, while `/main/` served the central VitePress layout.
+This is a conflicting server-side deployment, not a theme problem.
+
+**Manual correction in the source repository, not the central repository:**
+open **VladimirNilov28/tcp-proxy-from-scratch > Settings > Pages > Build and
+deployment**, select **Deploy from a branch**, choose **None** in the branch
+dropdown, and click **Save**. This disables only that repository's standalone
+Pages site; it does not delete the repository, Markdown, or notification workflow.
+Repeat for any future source repository with a Pages deployment at an imported
+project's URL prefix. Merely unpublishing the current deployment is temporary if
+branch publishing remains enabled.
+
+Keep the central repository's Pages source set to **GitHub Actions**. After
+disabling the source site, allow GitHub's routing/cache changes to propagate,
+then rerun the central deployment workflow on `main` and verify a direct reload
+of the project root and chapters. Do not change `base`, turn off clean URLs, add
+SPA 404 fallbacks, or copy standalone-site assets to conceal the conflict.
+See GitHub's [instructions for disabling a Pages site without deleting its repository](https://docs.github.com/en/pages/getting-started-with-github-pages/deleting-a-github-pages-site#deleting-your-site-by-changing-the-source).
 
 ## Rebuilding when source documentation changes
 

@@ -1,9 +1,11 @@
 [
   {
     "title": "TCP Proxy from Scratch",
+    "description": "TCP networking and non-blocking I/O with Java NIO.",
     "repository": "VladimirNilov28/tcp-proxy-from-scratch",
     "branch": "main",
     "path": "docs",
-    "slug": "tcp-proxy-from-scratch"
+    "slug": "tcp-proxy-from-scratch",
+    "entry": "guide/introduction.md"
   }
 ]
