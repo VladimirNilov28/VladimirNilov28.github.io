@@ -30,7 +30,6 @@ build locally.
 
 - `/main/`: short introduction, featured projects, and generated cards linking
   directly to every imported documentation project.
-- `/guides/`: automatically generated list of imported documentation projects.
 - `/tcp-proxy-from-scratch/`: the upstream Introduction chapter in the standard
   documentation layout, with guides below `/tcp-proxy-from-scratch/guide/`.
 - `/tcp-proxy-from-scratch/guide/introduction`: compatibility redirect to the
@@ -89,8 +88,8 @@ directory are rejected: include the referenced files within that directory.
 Source `.vitepress`, `.github` (including workflows), package manifests and
 lockfiles, `node_modules`, and common build/cache directories are excluded.
 The central configuration and theme remain authoritative. The script also
-generates the homepage guide cards and optional guides catalog from the same
-source list, a sidebar entry for every canonical imported page, and a manifest
+generates the homepage guide cards from the source list, a sidebar entry for
+every canonical imported page, and a manifest
 recording imported revisions, routes, and compatibility redirects. Links to
 the entry chapter or upstream `index.md` point directly to the project root.
 

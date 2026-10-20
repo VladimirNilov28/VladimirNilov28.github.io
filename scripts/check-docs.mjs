@@ -36,9 +36,10 @@ async function htmlFiles(directory) {
   return files
 }
 
-for (const route of ['/', '/main/', '/guides/']) {
+for (const route of ['/', '/main/']) {
   assert.ok(await outputFile(route), `Missing central output page: ${route}`)
 }
+assert.ok(!await outputFile('/guides/'), 'Removed guides catalog must not be generated')
 
 for (const project of manifest.projects) {
   const navigation = manifest.sidebar[`/${project.slug}/`].flatMap(group => group.items.map(item => item.link))

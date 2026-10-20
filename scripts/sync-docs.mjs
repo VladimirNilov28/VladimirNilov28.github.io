@@ -206,13 +206,10 @@ export async function syncDocumentation({ directory = root, sources, fetcher = f
       manifest.projects.push({ ...source, commit: commit.sha, pages, assets })
       console.log(`Imported ${source.repository}@${commit.sha.slice(0, 7)}: ${pages.length} pages, ${assets.length} assets`)
     }
-    const guideLinks = manifest.projects.map(source =>
-      `- [${source.title}](/${source.slug}/): ${source.description} ([source](https://github.com/${source.repository}))`).join('\n')
     const escape = text => text.replace(/[&<>"']/g, character =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character])
     const guideCards = manifest.projects.map(source =>
       `  <a class="project-card guide-card" href="/${source.slug}/">\n    <h3>${escape(source.title)}</h3>\n    <p>${escape(source.description)}</p>\n  </a>`).join('\n')
-    await writeFile(join(generated, 'guides.md'), `${guideLinks}\n`)
     await writeFile(join(generated, 'guide-cards.md'), `<div class="project-grid">\n${guideCards}\n</div>\n`)
     await writeFile(join(generated, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
     return manifest

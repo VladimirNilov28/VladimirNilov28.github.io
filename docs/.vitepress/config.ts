@@ -8,7 +8,7 @@ export default defineConfig({
   base: '/',
   cleanUrls: true,
   appearance: true,
-  srcExclude: ['_generated/guides.md', '_generated/guide-cards.md'],
+  srcExclude: ['_generated/guide-cards.md'],
   rewrites: importedDocs.rewrites,
   transformPageData(pageData) {
     if (!importedDocs.projects.some(project =>
@@ -28,7 +28,7 @@ export default defineConfig({
     logoLink: '/main/',
     nav: [
       { text: 'Home', link: '/main/' },
-      { text: 'Guides', link: '/guides/' }
+      { text: 'Guides', link: '/main/#guides' }
     ],
     socialLinks: [
       { icon: 'github', link: 'https://github.com/VladimirNilov28' }
