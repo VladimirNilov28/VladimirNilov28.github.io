@@ -15,7 +15,7 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "docs:check": "node scripts/check-docs.mjs",
-    "test": "node --test scripts/sync-docs.test.mjs"
+    "test": "node --test scripts/*.test.mjs"
   },
   "devDependencies": {
     "vitepress": "^1.6.4"

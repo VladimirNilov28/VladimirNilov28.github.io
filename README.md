@@ -99,6 +99,8 @@ Pull requests targeting `main` only build and validate. Pushes to `main`
 deploy automatically. Manual runs are available through **Actions > Build and
 deploy documentation > Run workflow**; select `main` to deploy. Manual runs
 on other branches validate without uploading or deploying a Pages artifact.
+Accepted `repository_dispatch` events also synchronize, build, validate, and
+deploy the complete website from `main`.
 
 Deployments use the `github-pages` environment and a shared concurrency group,
 so only one deployment runs at a time without cancelling an active deployment.
@@ -117,3 +119,43 @@ Required repository settings:
   manual approval.
 
 The published site will be available at `https://VladimirNilov28.github.io/`.
+
+## Rebuilding when source documentation changes
+
+The same deployment workflow accepts only the `documentation-updated`
+`repository_dispatch` event type. Before installing dependencies or building,
+`scripts/validate-dispatch.mjs` checks that `client_payload.repository` exactly
+matches a repository in `docs.sources.json`. Unsupported or missing repositories
+fail the build job, preventing artifact upload and deployment. The dispatch
+payload cannot choose a checkout ref, source URL, or build command; synchronization
+continues to use the configured branches and paths.
+
+A source repository can send the following request after a push to its
+documentation branch (for the current source, `main`, filtered to `docs/**`):
+
+```sh
+gh api --method POST \
+  repos/VladimirNilov28/VladimirNilov28.github.io/dispatches \
+  --input - <<'JSON'
+{
+  "event_type": "documentation-updated",
+  "client_payload": {
+    "repository": "VladimirNilov28/tcp-proxy-from-scratch"
+  }
+}
+JSON
+```
+
+In the source workflow, set `GH_TOKEN` from a secret such as
+`${{ secrets.DOCS_DISPATCH_TOKEN }}`. Use a GitHub App installation token or a
+fine-grained personal access token scoped to the **central** repository with
+**Contents: write**, as required by GitHub's repository-dispatch API. The source
+repository's default `GITHUB_TOKEN` cannot dispatch to a different repository.
+Store credentials in Actions secrets and never print them. Documentation
+downloads themselves remain public and unauthenticated.
+
+GitHub authenticates the API request; the payload allowlist is an additional
+restriction, not proof of the sender's repository identity. Limit access to the
+dispatch credential accordingly. GitHub must find the receiving workflow on
+the central repository's default branch (`main`). A successful API request
+returns HTTP 204; monitor the central Actions run for build/deployment results.

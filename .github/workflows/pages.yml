@@ -6,6 +6,8 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  repository_dispatch:
+    types: [documentation-updated]
 
 permissions:
   contents: read
@@ -20,6 +22,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'repository_dispatch' && 'main' || github.ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -28,10 +31,14 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - name: Validate documentation dispatch source
+        if: github.event_name == 'repository_dispatch'
+        run: node scripts/validate-dispatch.mjs
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Test documentation synchronization
+      - name: Test documentation automation
         run: npm test
 
       - name: Synchronize documentation and build website
@@ -41,7 +48,9 @@ jobs:
         run: npm run docs:check
 
       - name: Upload GitHub Pages artifact
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: >-
+          (github.event_name == 'repository_dispatch' && github.event.action == 'documentation-updated') ||
+          ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main')
         uses: actions/upload-pages-artifact@v5
         with:
           path: docs/.vitepress/dist
@@ -49,7 +58,9 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: >-
+      (github.event_name == 'repository_dispatch' && github.event.action == 'documentation-updated') ||
+      ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main')
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
