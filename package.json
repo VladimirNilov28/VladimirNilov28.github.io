@@ -8,9 +8,14 @@
     "npm": ">=11"
   },
   "scripts": {
+    "docs:sync": "node scripts/sync-docs.mjs",
+    "predocs:dev": "npm run docs:sync",
     "docs:dev": "vitepress dev docs",
+    "predocs:build": "npm run docs:sync",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "docs:check": "node scripts/check-docs.mjs",
+    "test": "node --test scripts/sync-docs.test.mjs"
   },
   "devDependencies": {
     "vitepress": "^1.6.4"

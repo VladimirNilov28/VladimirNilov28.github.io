@@ -1,6 +1,7 @@
 ---
 layout: page
 title: Redirecting
+search: false
 head:
   - - meta
     - http-equiv: refresh
