@@ -93,11 +93,133 @@ every canonical imported page, and a manifest
 recording imported revisions, routes, and compatibility redirects. Links to
 the entry chapter or upstream `index.md` point directly to the project root.
 
+### Organizing upstream documentation
+
+Keep content and an optional `docs.navigation.json` inside the documentation
+root specified by `path` in `docs.sources.json`. For example:
+
+```text
+docs/
+├── docs.navigation.json          # optional
+├── guide/
+│   ├── introduction.md           # configured entry chapter
+│   ├── fundamentals/
+│   │   ├── tcp-ip.md
+│   │   └── client-server.md
+│   └── java-nio/
+│       ├── index.md              # section overview
+│       ├── buffers.md
+│       └── examples/
+│           ├── blocking-server.md
+│           └── non-blocking-server.md
+└── images/
+    └── diagram.png
+```
+
+Without a navigation file, every imported Markdown page appears once in a
+directory-based, expandable sidebar. The configured entry appears first at
+the project root. Within each directory, pages come before subdirectories;
+both are sorted by their case-sensitive source paths, independently of locale
+or GitHub tree ordering. Groups are expanded by default. Page titles come from
+a `title:` frontmatter field, then an H1 heading, then the filename with hyphens
+and underscores replaced by spaces. A directory's title uses the same readable
+name fallback unless it contains `index.md`: that page supplies the group's
+title and clickable overview link, without a duplicate child entry.
+
+Nested `index.md` pages keep directory URLs such as
+`/<slug>/guide/java-nio/`. The documentation-root `index.md` retains its
+existing special behavior: it is omitted unless selected as `entry`, and links
+to it resolve to `/<slug>/`. The entry chapter always serves at `/<slug>/`,
+even if it is a nested `index.md`, with a redirect from its original URL.
+For searchable chapters, include a Markdown heading and descriptive content.
+
+### Controlling navigation titles and chapter order
+
+Create `docs.navigation.json` at the documentation root to override the
+automatic order, titles, nesting, and expansion state:
+
+```json
+{
+  "sidebar": [
+    { "text": "Introduction", "link": "guide/introduction.md" },
+    {
+      "text": "Fundamentals",
+      "collapsed": false,
+      "items": [
+        { "text": "TCP/IP", "link": "guide/fundamentals/tcp-ip.md" },
+        { "text": "Client-Server", "link": "guide/fundamentals/client-server.md" }
+      ]
+    },
+    {
+      "text": "Java NIO",
+      "link": "guide/java-nio/index.md",
+      "collapsed": false,
+      "items": [
+        { "text": "Buffers", "link": "guide/java-nio/buffers.md" },
+        {
+          "text": "Examples",
+          "collapsed": true,
+          "items": [
+            { "text": "Blocking Server", "link": "guide/java-nio/examples/blocking-server.md" },
+            { "text": "Non-blocking Server", "link": "guide/java-nio/examples/non-blocking-server.md" }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+The top-level object supports only `sidebar`, an array. Each sidebar item supports:
+
+| Property | Meaning |
+| --- | --- |
+| `text` | Required, nonblank display title. |
+| `link` | Existing imported `.md` file, relative to the documentation root (not the JSON item's parent). |
+| `items` | Array of nested items; can be combined with `link` for a clickable section overview. |
+| `collapsed` | Optional boolean on an item with `items`: `true` starts collapsed, `false` expanded. Omit it for VitePress's non-collapsible group behavior. |
+
+Every item must have `link`, `items`, or both. Explicit array order and titles
+are preserved, including the entry's position; put the entry first as shown
+above. Unknown properties, wrong value types, invalid JSON, missing or excluded
+pages, duplicate references (including group overview links), and conflicting
+output routes stop synchronization with an error. Links must use literal
+root-relative file paths without a leading slash, `.`/`..` segments, backslashes,
+URL encoding, URL schemes, query strings, or fragments. The navigation file is
+configuration only and is not published as a downloadable asset.
+
+**Unlisted pages are never silently omitted.** Each configured group is
+associated with the deepest common directory of all pages linked by that group
+and its descendants. Unlisted pages are appended to the deepest matching
+group, retaining their relative directory hierarchy and automatic ordering.
+For equal directory scopes, the first group in depth-first traversal wins
+(children before parents). Groups without any page references have no inferred
+directory scope. Pages with no matching group are appended to the sidebar
+using the automatic hierarchy. An empty `sidebar` array generates the complete
+automatic navigation. To control the exact placement of a page or disambiguate
+groups sharing a directory, reference it explicitly.
+
+Link between chapters using ordinary Markdown paths relative to the current
+page, for example `[Buffers](buffers.md)` from `guide/java-nio/index.md`,
+`[Overview](index.md)` from `buffers.md`, or
+`[Introduction](../introduction.md)` from that directory. Anchors and queries
+are supported in chapter content, for example `[Details](buffers.md#details)`.
+Keep relative image/download paths inside the documentation root. Chapter
+links are rewritten to their existing canonical project URLs; sidebar labels
+and ordering do not change routes.
+
+Existing repositories need no navigation file or central VitePress changes.
+Their pages, entry redirects, assets, search, and homepage cards continue to
+use the same publishing pipeline and URLs; only the formerly flat sidebar
+becomes hierarchical. Upstream repositories own content and optional navigation
+metadata, not a theme, VitePress configuration, or separate deployment.
+
 After building, `npm run docs:check` checks generated pages and assets, sidebar
 coverage, canonical URLs, redirects, duplicate clean paths, and local rendered
 links, anchors, images, scripts, and stylesheets. `npm test` uses local
 fixtures to cover asset preservation, URL rewriting, exclusions, multiple
-projects, stale-file cleanup, and explicit failures without network access.
+projects, stale-file cleanup, nested automatic/configured sidebars, unlisted
+pages, navigation validation, and real VitePress builds without network access.
 
 `docs/public/.nojekyll` is copied into the build output so GitHub Pages can
 serve it without Jekyll processing. Publish the contents of

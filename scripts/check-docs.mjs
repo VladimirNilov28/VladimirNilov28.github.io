@@ -41,9 +41,18 @@ for (const route of ['/', '/main/']) {
 }
 assert.ok(!await outputFile('/guides/'), 'Removed guides catalog must not be generated')
 
+function navigationLinks(items) {
+  return items.flatMap(item => [
+    ...(item.link ? [item.link] : []),
+    ...navigationLinks(item.items ?? [])
+  ])
+}
+
 for (const project of manifest.projects) {
-  const navigation = manifest.sidebar[`/${project.slug}/`].flatMap(group => group.items.map(item => item.link))
+  const navigation = navigationLinks(manifest.sidebar[`/${project.slug}/`])
   assert.equal(new Set(navigation).size, navigation.length, `Duplicate sidebar entries: ${project.slug}`)
+  assert.deepEqual([...navigation].sort(), project.pages.map(page => page.link).sort(),
+    `Sidebar must contain exactly the imported pages: ${project.slug}`)
   const home = await readFile(join(output, 'main/index.html'), 'utf8')
   assert.ok(home.includes(`class="project-card guide-card" href="/${project.slug}/"`),
     `Missing direct homepage guide card: ${project.slug}`)

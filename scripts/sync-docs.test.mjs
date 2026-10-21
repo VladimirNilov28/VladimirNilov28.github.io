@@ -33,6 +33,41 @@ const fixture = {
   'build/file.txt': 'excluded',
   '.github/workflows/pages.yml': 'excluded'
 }
+const nestedFixture = {
+  ...fixture,
+  'guide/fundamentals/tcp-ip.md': '---\ntitle: "TCP/IP"\n---\n# Networking\n',
+  'guide/fundamentals/client-server.md': '# Client-Server Architecture\n',
+  'guide/java-nio/index.md': '# Java NIO\n\n[Buffers](buffers.md)\n',
+  'guide/java-nio/buffers.md': '# Buffers\n\n[Overview](index.md)\n',
+  'guide/java-nio/channels.md': '# Channels\n',
+  'guide/java-nio/examples/blocking-server.md': '# Blocking TCP Server\n',
+  'guide/java-nio/examples/non-blocking-server.md': '# Non-blocking TCP Server\n',
+  'guide/implementation/proxy-server.md': 'Proxy server notes.\n\n## Implementation\n\nBuild the proxy.\n'
+}
+const navigation = {
+  sidebar: [
+    { text: 'Introduction', link: 'guide/start.md' },
+    {
+      text: 'NIO Tutorial', link: 'guide/java-nio/index.md', collapsed: false,
+      items: [
+        { text: 'Channel API', link: 'guide/java-nio/channels.md' },
+        { text: 'Buffer API', link: 'guide/java-nio/buffers.md' },
+        {
+          text: 'Server Examples', collapsed: true,
+          items: [{ text: 'Async Server', link: 'guide/java-nio/examples/non-blocking-server.md' }]
+        }
+      ]
+    },
+    {
+      text: 'Networking Basics', collapsed: true,
+      items: [{ text: 'TCP/IP Protocol', link: 'guide/fundamentals/tcp-ip.md' }]
+    }
+  ]
+}
+const configuredFixture = { ...nestedFixture, 'docs.navigation.json': JSON.stringify(navigation) }
+const navigationLinks = items => items.flatMap(item => [
+  ...(item.link ? [item.link] : []), ...navigationLinks(item.items ?? [])
+])
 
 function fetchFixture(files = fixture, fail = false) {
   return async url => {
@@ -64,7 +99,7 @@ test('imports pages and binary assets, excludes tooling, generates all navigatio
   assert.equal(manifest.projects[0].assets.length, 2)
   assert.equal(manifest.rewrites['_generated/example-project/guide/start.md'], 'example-project/index.md')
   assert.equal(manifest.rewrites['_generated/_redirects/example-project.md'], 'example-project/guide/start.md')
-  assert.deepEqual(manifest.sidebar['/example-project/'][0].items.map(page => page.link), [
+  assert.deepEqual(navigationLinks(manifest.sidebar['/example-project/']), [
     '/example-project/', '/example-project/guide/next'
   ])
   await assert.rejects(readFile(join(directory, 'docs/_generated/example-project/index.md')), { code: 'ENOENT' })
@@ -144,13 +179,15 @@ test('rewrites common Markdown, reference, HTML and frontmatter links without ch
   '---\nhero:\n  link: "/example-project/guide/next#details" # Keep this\n---')
 })
 
-test('VitePress builds rewritten routes, relative links, navigation and unchanged static assets', async t => {
+for (const [mode, files] of [['automatic', nestedFixture], ['configured', configuredFixture]]) {
+test(`VitePress builds ${mode} nested navigation, rewritten routes, relative links and unchanged assets`, async t => {
   const directory = await temporaryRoot(t)
   await writeFile(join(directory, 'package.json'), '{"type":"module"}\n')
   await symlink(fileURLToPath(new URL('../node_modules', import.meta.url)), join(directory, 'node_modules'), 'dir')
-  const manifest = await syncDocumentation({ directory, sources: [source], fetcher: fetchFixture() })
+  const manifest = await syncDocumentation({ directory, sources: [source], fetcher: fetchFixture(files) })
   await mkdir(join(directory, 'docs/.vitepress'), { recursive: true })
   await mkdir(join(directory, 'docs/main'), { recursive: true })
+  await writeFile(join(directory, 'docs/index.md'), '# Website\n')
   await writeFile(join(directory, 'docs/main/index.md'), '# Home\n\n## Guides\n\n<!--@include: ../_generated/guide-cards.md-->\n')
   await copyFile(fileURLToPath(new URL('../docs/.vitepress/config.ts', import.meta.url)),
     join(directory, 'docs/.vitepress/config.ts'))
@@ -185,6 +222,139 @@ test('VitePress builds rewritten routes, relative links, navigation and unchange
   assert.ok(search.includes('/example-project/#'))
   assert.ok(!search.includes('/example-project/guide/start'))
   assert.ok(!search.includes('hero') && !search.includes('Redirecting'))
+  for (const item of manifest.projects[0].pages) {
+    const path = item.link === '/example-project/' ? 'example-project/index.html' :
+      `${item.link.slice(1).replace(/\/$/, '/index')}.html`
+    const html = await readFile(join(output, path), 'utf8')
+    assert.ok(html.includes(`rel="canonical" href="${item.link}"`))
+    for (const link of navigationLinks(manifest.sidebar['/example-project/'])) {
+      assert.ok(html.includes(`href="${link}"`), `Missing nested navigation ${link} in ${path}`)
+    }
+    assert.ok(search.includes(item.link), `Missing search entry: ${item.link}`)
+  }
+  const overview = await readFile(join(output, 'example-project/guide/java-nio/index.html'), 'utf8')
+  assert.ok(overview.includes('href="/example-project/guide/java-nio/buffers"'))
+  const buffers = await readFile(join(output, 'example-project/guide/java-nio/buffers.html'), 'utf8')
+  assert.ok(buffers.includes('href="/example-project/guide/java-nio/"'))
+  if (mode === 'configured') {
+    assert.ok(page.includes('NIO Tutorial') && page.includes('Server Examples'))
+    assert.ok(page.indexOf('Channel API') < page.indexOf('Buffer API'))
+  }
+  await mkdir(join(directory, 'scripts'), { recursive: true })
+  await copyFile(fileURLToPath(new URL('./check-docs.mjs', import.meta.url)),
+    join(directory, 'scripts/check-docs.mjs'))
+  await promisify(execFile)(process.execPath, [join(directory, 'scripts/check-docs.mjs')], { timeout: 30_000 })
+})
+}
+
+test('automatic navigation mirrors directories with entry first, overview links, titles and deterministic ordering', async t => {
+  const directory = await temporaryRoot(t)
+  const sync = files => syncDocumentation({ directory, sources: [source], fetcher: fetchFixture(files) })
+  const manifest = await sync(nestedFixture)
+  const items = manifest.sidebar['/example-project/'][0].items
+  assert.deepEqual(items[0], { text: 'Getting Started', link: '/example-project/' })
+  assert.equal(items[1].text, 'guide')
+  const guide = items[1].items
+  assert.deepEqual(guide.map(item => item.text), ['Next Steps', 'fundamentals', 'implementation', 'Java NIO'])
+  assert.deepEqual(guide[1].items.map(item => item.text), ['Client-Server Architecture', 'TCP/IP'])
+  assert.equal(guide[2].items[0].text, 'proxy server')
+  assert.deepEqual(guide[3], {
+    text: 'Java NIO', link: '/example-project/guide/java-nio/', collapsed: false,
+    items: [
+      { text: 'Buffers', link: '/example-project/guide/java-nio/buffers' },
+      { text: 'Channels', link: '/example-project/guide/java-nio/channels' },
+      {
+        text: 'examples', collapsed: false, items: [
+          { text: 'Blocking TCP Server', link: '/example-project/guide/java-nio/examples/blocking-server' },
+          { text: 'Non-blocking TCP Server', link: '/example-project/guide/java-nio/examples/non-blocking-server' }
+        ]
+      }
+    ]
+  })
+  const links = navigationLinks(manifest.sidebar['/example-project/'])
+  assert.equal(new Set(links).size, manifest.projects[0].pages.length)
+  const reversed = await sync(Object.fromEntries(Object.entries(nestedFixture).reverse()))
+  assert.deepEqual(reversed, manifest)
+})
+
+test('explicit navigation preserves custom hierarchy, order and collapse states and appends unlisted pages', async t => {
+  const directory = await temporaryRoot(t)
+  const manifest = await syncDocumentation({ directory, sources: [source], fetcher: fetchFixture(configuredFixture) })
+  const items = manifest.sidebar['/example-project/'][0].items
+  assert.deepEqual(items.slice(0, 3).map(item => item.text), ['Introduction', 'NIO Tutorial', 'Networking Basics'])
+  assert.equal(items[1].link, '/example-project/guide/java-nio/')
+  assert.equal(items[1].collapsed, false)
+  assert.deepEqual(items[1].items.map(item => item.text), ['Channel API', 'Buffer API', 'Server Examples'])
+  assert.equal(items[1].items[2].collapsed, true)
+  assert.deepEqual(items[1].items[2].items.map(item => item.text), ['Async Server', 'Blocking TCP Server'])
+  assert.equal(items[2].collapsed, true)
+  assert.deepEqual(items[2].items.map(item => item.text), ['TCP/IP Protocol', 'Client-Server Architecture'])
+  assert.equal(items[3].text, 'guide')
+  assert.deepEqual(items[3].items.map(item => item.text), ['Next Steps', 'implementation'])
+  const links = navigationLinks(items)
+  assert.equal(new Set(links).size, links.length)
+  assert.deepEqual([...links].sort(), manifest.projects[0].pages.map(page => page.link).sort())
+  assert.ok(!manifest.projects[0].assets.some(asset => asset.endsWith('docs.navigation.json')))
+  await assert.rejects(readFile(join(directory, 'docs/public/_generated/example-project/docs.navigation.json')), { code: 'ENOENT' })
+})
+
+test('empty explicit navigation includes all pages automatically and index entries retain their canonical root', async t => {
+  const directory = await temporaryRoot(t)
+  const sync = config => syncDocumentation({
+    directory, sources: [{ ...source, entry: 'index.md' }],
+    fetcher: fetchFixture({
+      'index.md': '# Welcome\n', 'section/index.md': '# Section\n', 'section/child.md': '# Child\n',
+      ...(config === undefined ? {} : { 'docs.navigation.json': JSON.stringify(config) })
+    })
+  })
+  const automatic = await sync()
+  assert.deepEqual(await sync({ sidebar: [] }), automatic)
+  assert.deepEqual(automatic.redirects, [])
+  assert.deepEqual(navigationLinks(automatic.sidebar['/example-project/']), [
+    '/example-project/', '/example-project/section/', '/example-project/section/child'
+  ])
+})
+
+test('invalid navigation fails descriptively and removes partial generated output', async t => {
+  const directory = await temporaryRoot(t)
+  const cases = [
+    ['{', /invalid JSON/],
+    ['null', /sidebar array/],
+    ['[]', /sidebar array/],
+    ['{"sidebar": {}}', /sidebar array/],
+    ['{"sidebar": [], "unknown": true}', /sidebar array/],
+    ...[
+      null, {}, { text: 'Only text' }, { text: '', link: 'guide/start.md' },
+      { text: 'Unsupported', link: 'guide/start.md', icon: 'star' },
+      { text: 'Wrong items', items: {} }, { text: 'Wrong link', link: 42 },
+      { text: 'Wrong state', items: [], collapsed: 'false' },
+      { text: 'Leaf state', link: 'guide/start.md', collapsed: true },
+      { text: 'Nested invalid', items: [null] }
+    ].map(item => [JSON.stringify({ sidebar: [item] }), /expected/]),
+    ...[
+      '../outside.md', 'guide/../../outside.md', '/guide/start.md', './guide/start.md',
+      'guide\\start.md', 'https://example.com/page.md', 'guide/%2e%2e/start.md',
+      'guide/start.md#start', 'guide/start.md?view=full', 'guide/start', 'guide//start.md'
+    ].map(link => [JSON.stringify({ sidebar: [{ text: 'Unsafe', link }] }), /relative .md path/]),
+    ...['missing.md', 'images/diagram.png.md', 'index.md'].map(link => [
+      JSON.stringify({ sidebar: [{ text: 'Missing', link }] }), /page does not exist or is not imported/
+    ]),
+    [JSON.stringify({ sidebar: [
+      { text: 'First', link: 'guide/start.md' },
+      { text: 'Group', items: [{ text: 'Duplicate', link: 'guide/start.md' }] }
+    ] }), /duplicate page reference/],
+    [JSON.stringify({ sidebar: [{
+      text: 'Overview', link: 'guide/java-nio/index.md',
+      items: [{ text: 'Duplicate', link: 'guide/java-nio/index.md' }]
+    }] }), /duplicate page reference/]
+  ]
+  for (const [configuration, error] of cases) {
+    await assert.rejects(syncDocumentation({
+      directory, sources: [source],
+      fetcher: fetchFixture({ ...nestedFixture, 'docs.navigation.json': configuration })
+    }), error, configuration)
+    await assert.rejects(readFile(join(directory, 'docs/_generated/manifest.json')), { code: 'ENOENT' })
+  }
 })
 
 test('network errors fail synchronization and discard previous and partial generated files', async t => {
@@ -223,10 +393,39 @@ test('entry chapters work without an upstream homepage and duplicate clean route
   const page = await readFile(join(directory, 'docs/_generated/example-project/guide/start.md'), 'utf8')
   assert.ok(page.includes('[Root](/example-project/)'))
   assert.ok(page.includes('[Chapter](/example-project/#start)'))
+  for (const file of ['guide/next/index.md', 'guide/start/index.md']) {
+    await assert.rejects(syncDocumentation({
+      directory, sources: [source],
+      fetcher: fetchFixture({ ...fixture, [file]: '# Duplicate' })
+    }), /Conflicting generated documentation route/)
+  }
+})
+
+test('nested index entries serve at the project root and retain a directory redirect', async t => {
+  const directory = await temporaryRoot(t)
+  const manifest = await syncDocumentation({
+    directory, sources: [{ ...source, entry: 'guide/java-nio/index.md' }],
+    fetcher: fetchFixture(nestedFixture)
+  })
+  assert.deepEqual(manifest.sidebar['/example-project/'][0].items[0], {
+    text: 'Java NIO', link: '/example-project/'
+  })
+  assert.deepEqual(manifest.redirects, [{ from: '/example-project/guide/java-nio/', to: '/example-project/' }])
+  const links = navigationLinks(manifest.sidebar['/example-project/'])
+  assert.equal(links.filter(link => link === '/example-project/').length, 1)
+  assert.ok(!links.includes('/example-project/guide/java-nio/'))
+  const buffers = await readFile(join(directory, 'docs/_generated/example-project/guide/java-nio/buffers.md'), 'utf8')
+  assert.ok(buffers.includes('[Overview](/example-project/)'))
+})
+
+test('navigation metadata cannot become a broken downloadable content link', async t => {
+  const directory = await temporaryRoot(t)
   await assert.rejects(syncDocumentation({
     directory, sources: [source],
-    fetcher: fetchFixture({ ...fixture, 'guide/next/index.md': '# Duplicate' })
-  }), /Conflicting generated documentation route/)
+    fetcher: fetchFixture({
+      ...configuredFixture, 'README.md': '# Metadata\n\n[Config](docs.navigation.json)\n'
+    })
+  }), /missing link or image target: docs.navigation.json/)
 })
 
 test('guide cards escape configured plain text and index entries need no alias', async t => {
